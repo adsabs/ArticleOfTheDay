@@ -30,7 +30,7 @@ def generate_batch():
     bibstems = []
     # Retrieve the initial metadata from Solr (specify a year range)
     # Include the previous year in January
-    if current_date.month = 1:
+    if current_date.month == 1:
         year_range = "%s-%s" % (current_date.year - 1, current_date.year)
     else:
         year_range = str(current_date.year)
