@@ -1,0 +1,7 @@
+venv/
+local_config.py
+__pycache__/
+*.py[cod]
+*$py.class
+# For MacOS
+.DS_Store
