@@ -15,6 +15,8 @@ import paper_network
 
 def generate_batch():
     # Initialize data structures
+    ## The current date
+    current_date = datetime.now()
     ## The dictionary that will hold the bibcodes in each cluster
     cluster_members = defaultdict(list)
     ## The dictionary that contains the label for each cluster
@@ -25,8 +27,13 @@ def generate_batch():
     candidates = []
     ## bibstems list to avoid papers from the same journal
     bibstems = []
-    # Retrieve the initial metadata from Solr
-    data = get_data()
+    # Retrieve the initial metadata from Solr (specify a year range)
+    # Include the previous year in January
+    if current_date.month = 1:
+        year_range = "%s-%s" % (current_date.year - 1, current_date.year)
+    else:
+        year_range = str(current_date.year)
+    data = get_data(year_range)
     # From the initial dataset, get the actual candidates by
     # 1. removing all publications that we used previously
     clean_data = cleanup_data(data)
@@ -106,7 +113,6 @@ def generate_batch():
         sys.exit('Something went wrong saving the current AoD batch. Post to Slack: %s' % res)
     # Email the overview of the new batch. 
     # For each candidate, include the keywords of the cluster it came from
-    current_date = datetime.now()
     subject = '<%s|Articles of the Day - batch %s/%s/%s>' % (saved_batch['library_url'], current_date.month, current_date.day,current_date.year)
     message = '```'
     for entry in new_batch:

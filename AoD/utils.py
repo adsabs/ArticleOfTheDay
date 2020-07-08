@@ -11,8 +11,11 @@ import tweepy
 class NoSuchLibrary(Exception):
     pass
 
-def get_data(**args):
+def get_data(yrange):
     # Get the information from Solr
+    # The specification of the year range is just to prevent older material
+    # to be included if that happens to get loaded
+    query = current_app.config.get('QUERY') + " year:%s" % yrange
     params = {'wt': 'json',
                'q': current_app.config.get('QUERY'),
               'fl': current_app.config.get('FIELDS'),
