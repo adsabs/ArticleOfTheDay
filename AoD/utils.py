@@ -109,15 +109,38 @@ def cleanup_data(data):
     return data
 
 def save_new_batch(batch):
+    # Get the list of bibcodes in this batch
     bibcodes = [e[1] for e in batch]
+    # We will need to API token to interact with the ADS Libraries system
     api_token = current_app.config.get('API_TOKEN')
+    # Get the name of the library used to store the batch
     library_name= current_app.config.get('BATCH_LIBRARY_NAME')
+    # Determine which library identifier it has
     try:
         library_id = get_library_id(api_token, library_name)
     except:
         raise Exception('Unable to find library ID for "%s"' % library_name)
+    # Update this library with the bibcodes
     res = update_library(api_token, bibcodes, library_id)
+    # Store the URL of this library to be used later on in a post on Slack
     res['library_url'] = "%s/%s" % (current_app.config.get('ADS_LIBRARY_PATH'), library_id)
+    return res
+
+def update_main_library(bibcode):
+    # Get the list of bibcodes in this batch
+    bibcodes = [bibcode]
+    # We will need to API token to interact with the ADS Libraries system
+    api_token = current_app.config.get('API_TOKEN')
+    # Get the name of the library used to store the batch
+    library_name= current_app.config.get('AOD_LIBRARY_NAME')
+    # Determine which library identifier it has
+    try:
+        library_id = get_library_id(api_token, library_name)
+    except:
+        raise Exception('Unable to find library ID for "%s"' % library_name)
+    # Update this library with the bibcodes
+    res = update_library(api_token, bibcodes, library_id)
+
     return res
 
 def post_to_slack(slack_data):

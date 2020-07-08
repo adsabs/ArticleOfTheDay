@@ -11,6 +11,7 @@ from utils import save_new_batch
 from utils import retrieve_article
 from utils import post_to_slack
 from utils import post_to_twitter
+from utils import update_main_library
 import paper_network
 
 def generate_batch():
@@ -167,4 +168,7 @@ def post_article():
         except:
             res = 'failed'
         sys.exit('Something went wrong posting the Article of the Day to Twitter. Post to Slack: %s' % res)
+    # With a successful post we add this article to the library containing all the articles
+    # that have been posted
+    res = update_main_library(article_of_the_day['bibcode'])
         
