@@ -107,7 +107,7 @@ def augment_graph_data(data, max_groups):
 
     #attaching title 'word clouds' to the nodes
     significant_words = tf_idf.get_tf_idf_vals(titles)
-    for x in summary_graph.nodes():
+    for x in list(summary_graph.nodes()):
         #remove the ones with only 1 paper
         if summary_graph.node[x]["paper_count"] == 1:
             summary_graph.remove_node(x)
@@ -122,13 +122,13 @@ def augment_graph_data(data, max_groups):
     top_nodes = list(sorted([n for n in summary_graph.nodes(data = True)], key= lambda x : x[1]["total_citations"], reverse = True ))[:max_groups]
 #    top_nodes = [t for t in top_nodes if t >=1]
     top_node_ids = [n[0] for n in top_nodes]
-    for group_id in summary_graph.nodes():
+    for group_id in list(summary_graph.nodes()):
         if group_id not in top_node_ids:
             summary_graph.remove_node(group_id)
 
     #remove nodes from full graph that aren't in top group
     #this automatically takes care of edges, too
-    for node in G.nodes(data = True):
+    for node in list(G.nodes(data = True)):
         if node[1]["group"] not in top_node_ids:
             G.remove_node(node[0])
 
