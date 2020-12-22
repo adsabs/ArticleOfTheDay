@@ -9,7 +9,6 @@ from utils import get_data
 from utils import cleanup_data
 from utils import save_new_batch
 from utils import retrieve_article
-from utils import post_to_slack
 from utils import post_to_twitter
 from utils import update_main_library
 import paper_network
@@ -34,13 +33,37 @@ def generate_batch():
         year_range = "%s-%s" % (current_date.year - 1, current_date.year)
     else:
         year_range = str(current_date.year)
-    data = get_data(year_range)
+    try:
+        data = get_data(year_range)
+    except:
+        current_app.logger.exception("Failed to retrieve initial metadata from Solr")
+        error = {
+            'Error':'Failed to retrieve initial metadata from Solr',
+            'Slack':'@edwin Failed to retrieve initial metadata from Solr for new Article of the Day batch. Please check logs.'
+        }
+        return error
     # From the initial dataset, get the actual candidates by
     # 1. removing all publications that we used previously
-    clean_data = cleanup_data(data)
+    try:
+        clean_data = cleanup_data(data)
+    except:
+        current_app.logger.exception("Failed to clean up data (remove publications used previously)")
+        error = {
+            'Error':'Failed to clean up data (remove publications used previously)',
+            'Slack':'@edwin Failed to clean up data for Article of the Day batch. Please check logs.'
+        }
+        return error
     # Create a paper network based on the candidates found
     # This network will be segmented into clusters. These clusters will be used to find candidates.
-    visdata = paper_network.get_papernetwork(clean_data, current_app.config.get("MAX_GROUPS"))
+    try:
+        visdata = paper_network.get_papernetwork(clean_data, current_app.config.get("MAX_GROUPS"))
+    except:
+        current_app.logger.exception("Failed to create a paper network based on the candidates found")
+        error = {
+            'Error':'Failed to create a paper network based on the candidates found',
+            'Slack':'@edwin Failed to create a paper network for the Article of the Day batch. Please check logs.'
+        }
+        return error
     # Use the network to determine the new batch. The clustering is stored in the
     # "summaryGraph" attribute, while the complete network in stored in "fullGraph".
     #
@@ -59,6 +82,7 @@ def generate_batch():
         try:
             weight = math.log10(1+(float(citnum + rdsnum)/float(autnum)))
         except:
+            current_app.logger.exception("Failed to calculate weight for node {0}, switching to cite_read_boost".format(node['node_name']))
             weight = float(node['cite_read_boost'])
         cluster_members[node['group']].append((node['node_name'], weight))
         # Here we store all attributes of each node to be accessed later on
@@ -72,47 +96,45 @@ def generate_batch():
         candidates.append((cluster, candidate))
         bibstems.append(candidate[4:9])
     # The new batch is a random pick of 5 from the candidates
-    new_batch = sample(candidates, 5)
+    try:
+        new_batch = sample(candidates, 5)
+    except:
+        current_app.logger.exception('Failed to create new batch')
+        error = {
+            'Error':'Failed to create new batch',
+            'Slack':'@edwin Failed to create new batch for the Article of the Day. Please check logs.'
+        }
+        return error
     # If the new batch has less than 5 articles, sound the alarm
     if len(new_batch) < 5:
-        error_message = {
-            'text': '@edwin Found only %s articles instead of 5! Check!' % len(new_batch),
-            'link_names': 1
+        current_app.logger.error('AoD batch less then 5 records: {0}'.format(len(new_batch)))
+        error = {
+            'Error':'AoD batch is too small',
+            'Slack': '@edwin Found only %s articles instead of 5! Check logs!' % len(new_batch)
         }
-        try:
-            res = post_to_slack(error_message)
-        except:
-            res = 'failed'
-        sys.exit('AoD batch is too small. Post to Slack: %s' % res)
+        return error
     # Store the new batch in the appropriate ADS Library
     try:
         saved_batch = save_new_batch(new_batch)
     except Exception as err:
-        error_message = {
-            'text': '@edwin Something went wrong saving the current AoD batch:\n%s'%err,
-            'link_names': 1
+        current_app.logger.error('Something went wrong saving the current AoD batch: {0}'.format(err))
+        error = {
+            'Error':'Something went wrong saving the current AoD batch: {0}'.format(err),
+            'Slack': '@edwin Something went wrong saving the current AoD batch:\n{0}'.format(err)
         }
-        try:
-            res = post_to_slack(error_message)
-        except:
-            res = 'failed'
-        sys.exit('Something went wrong saving the current AoD batch. Post to Slack: %s' % res)        
+        return error
     # Check that 5 records were posted
     try:
         number_added = saved_batch['number_added']
     except:
         number_added = 0
     if number_added != 5:
-        error_message = {
-            'text': '@edwin Something went wrong saving the current AoD batch! Please check!',
-            'link_names': 1
+        current_app.logger.error('Something went wrong saving the current AoD batch: less than 5 records added')
+        error = {
+            'Error':'Something went wrong saving the current AoD batch',
+            'Slack': '@edwin Something went wrong saving the current AoD batch: less than 5 records added! Please check!'
         }
-        try:
-            res = post_to_slack(error_message)
-        except:
-            res = 'failed'
-        sys.exit('Something went wrong saving the current AoD batch. Post to Slack: %s' % res)
-    # Email the overview of the new batch. 
+        return error
     # For each candidate, include the keywords of the cluster it came from
     subject = '<%s|Articles of the Day - batch %s/%s/%s>' % (saved_batch['library_url'], current_date.month, current_date.day,current_date.year)
     message = '```'
@@ -120,55 +142,58 @@ def generate_batch():
         try:
             label = "; ".join([l.decode("utf-8") for l in cluster_labels[entry[0]]])
         except:
+            current_app.logger.exception("Failed to create label for cluster")
             label = "NA"
         message += "%s\tlabel: %s\n"%(entry[1],label)
     message += '```'
     post_message = {
-        'text': '@edwin %s\nEntries:\n%s' % (subject, message),
-        'link_names': 1
+        'Slack': '@edwin %s\nEntries:\n%s' % (subject, message),
     }
-    try:
-        res = post_to_slack(post_message)
-    except:
-        res = 'failed'
-        sys.stderr.write('Something went wrong posting the current AoD batch to Slack.')
+    return post_message
 
 def post_article():
     # Get one article from the current batch
     try:
         article_of_the_day = retrieve_article()
-    except Exception as err:
-        error_message = {
-            'text': '@edwin Something went wrong retrieving the Article of the Day:\n%s'%err,
-            'link_names': 1
+    except:
+        current_app.logger.exception('Something went wrong retrieving the Article of the Day')
+        error = {
+            'Error':'Something went wrong retrieving the Article of the Day',
+            'Slack':'@edwin Something went wrong retrieving the Article of the Day. Please check logs.'
         }
-        try:
-            res = post_to_slack(error_message)
-        except:
-            res = 'failed'
-        sys.exit('Something went wrong retrieving the Article of the Day. Post to Slack: %s' % res)
+        return error
     # Now we can start posting the article
     # 1. post to Twitter
-    error_message = {}
     try:
         twitter = post_to_twitter(article_of_the_day)
-    except Exception as err:
-        error_message = {
-            'text': '@edwin Something went wrong posting the Article of the Day to Twitter:\n%s'%err,
-            'link_names': 1
+    except:
+        current_app.logger.exception('Something went wrong posting the Article of the Day to Twitter')
+        error = {
+            'Error':'Something went wrong posting the Article of the Day to Twitter',
+            'Slack':'@edwin Something went wrong posting the Article of the Day to Twitter. Please check logs.'
         }
+        return error
     if not twitter:
-        error_message = {
-            'text': '@edwin Unable to post the Article of the Day to Twitter:\n%s'%twitter,
-            'link_names': 1
+        error = {
+            'Error':'Unable to post the Article of the Day to Twitter',
+            'Slack': '@edwin Unable to post the Article of the Day to Twitter:\n%s'%twitter
         }
-    if error_message:
-        try:
-            res = post_to_slack(error_message)
-        except:
-            res = 'failed'
-        sys.exit('Something went wrong posting the Article of the Day to Twitter. Post to Slack: %s' % res)
+        return error
     # With a successful post we add this article to the library containing all the articles
     # that have been posted
-    res = update_main_library(article_of_the_day['bibcode'])
+    try:
+        res = update_main_library(article_of_the_day['bibcode'])
+    except:
+        current_app.logger.exception('Failed to update the Article of the Day main library')
+        error = {
+            'Error':'Failed to update the Article of the Day main library',
+            'Slack':'@edwin Failed to update the Article of the Day main library. Please check logs.'
+        }
+        return error
+    current_app.logger.info('Successfully posted Article of the Day {0} to Twitter'.format(article_of_the_day))
+    post_message = {
+        'Slack':'Successfully posted Article of the Day {0} to Twitter'.format(article_of_the_day['bibcode'])
+    }
+    return post_message
+        
         

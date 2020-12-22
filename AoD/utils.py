@@ -10,6 +10,14 @@ import tweepy
 
 class NoSuchLibrary(Exception):
     pass
+class NoSuchLibraryID(Exception):
+    pass
+class LibraryRetrievalException(Exception):
+    pass
+class SolrErrorStatus(Exception):
+    pass
+class EmptyBatchLibrary(Exception):
+    pass
 
 def get_data(yrange):
     # Get the information from Solr
@@ -23,9 +31,7 @@ def get_data(yrange):
               'rows': current_app.config.get('MAX_HITS')}
     response = client().get(current_app.config.get('SOLR_PATH'), params=params)
     if response.status_code != 200:
-        return {"Error": "Unable to get results!",
-                "Error Info": response.text,
-                "Status Code": response.status_code}
+        raise SolrErrorStatus("Solr return status code {0}: {1}".format(response.status_code, response.text))
     resp = response.json()
     # Collect meta data
     return resp['response']['docs']
@@ -33,13 +39,15 @@ def get_data(yrange):
 def get_library_id(token, libname):
     library_url = "%s/libraries" % (current_app.config.get('LIBRARY_PATH'))
     response = client().get(library_url)
+    if response.status_code != 200:
+        raise SolrErrorStatus("Solr return status code {0}: {1}".format(response.status_code, response.text))
     data = response.json()['libraries']
     try:
         libdata = [d for d in data if d['name'] == libname][0]
     except:
-        # We did not find a library with this name, even though it was initially found and added to "goodlibs"
-        # This should never happen!
-        raise NoSuchLibrary
+        # We did not find a library with this name.
+        current_app.logger.exception('Unable to find library "{0}" among libraries'.format(libname))
+        raise NoSuchLibrary('Unable to find library "{0}" among libraries'.format(libname))
     return libdata['id']
 
 def get_library(token, libid, rows=100, start=0, with_metadata=False):
@@ -56,10 +64,7 @@ def get_library(token, libid, rows=100, start=0, with_metadata=False):
     # The metadata in the header tells us how many records this library contains
     num_documents = data['metadata']['num_documents']
     # Get the results contained in this first request
-    try:
-        documents = data['solr']['response']['docs']
-    except:
-        raise TypeError
+    documents = data['solr']['response']['docs']
     # The number of rows in the requests and the number of records in the library specifies how often to paginate
     num_paginates = int(math.ceil((num_documents) / (1.0*rows)))
     # Update the start position with the number of records we have retrieved so far
@@ -101,9 +106,14 @@ def cleanup_data(data):
     try:
         library_id = get_library_id(api_token, library_name)
     except:
-        sys.exit('Unable to find library ID for "%s"' % library_name)
+        current_app.logger.exception('Unable to find library ID for "{0}"'.format(library_name))
+        raise NoSuchLibraryID('Unable to find library ID for "{0}"'.format(library_name))
     # Get the bibcodes of all articles posted earlier as ADS Article of the Day
-    prior_articles = get_library(api_token, library_id)
+    try:
+        prior_articles = get_library(api_token, library_id)
+    except:
+        current_app.logger.exception('Unable to get prior articles for "{0}" using library ID {1}'.format(library_name, library_id))
+        raise LibraryRetrievalException('Unable to get prior articles for "{0}" using library ID {1}'.format(library_name, library_id))
     # Remove these from the current set (if present)
     data = [d for d in data if d['bibcode'] not in prior_articles]
     return data
@@ -120,6 +130,18 @@ def save_new_batch(batch):
         library_id = get_library_id(api_token, library_name)
     except:
         raise Exception('Unable to find library ID for "%s"' % library_name)
+    # First double check that batch library is empty
+    try:
+        prior_articles = get_library(api_token, library_id)
+    except:
+        current_app.logger.exception('Unable to get prior articles for "{0}" using library ID {1}'.format(library_name, library_id))
+        raise LibraryRetrievalException('Unable to get prior articles for "{0}" using library ID {1}'.format(library_name, library_id))
+    if len(prior_articles) > 0:
+        current_app.logger.info('Batch library {0} still has articles in it! Attempting to remove.'.format(library_id))
+        try:
+            res = update_library(api_token, prior_articles, library_id, action='remove')
+        except:
+            current_app.logger.exception('Failed to remove existing articles in batch library {0}'.format(library_id))
     # Update this library with the bibcodes
     res = update_library(api_token, bibcodes, library_id)
     # Store the URL of this library to be used later on in a post on Slack
@@ -140,7 +162,6 @@ def update_main_library(bibcode):
         raise Exception('Unable to find library ID for "%s"' % library_name)
     # Update this library with the bibcodes
     res = update_library(api_token, bibcodes, library_id)
-
     return res
 
 def post_to_slack(slack_data):
@@ -164,15 +185,23 @@ def retrieve_article():
     try:
         library_id = get_library_id(api_token, library_name)
     except:
+        current_app.logger.exception('Unable to find library ID for "%s"' % library_name)
         raise Exception('Unable to find library ID for "%s"' % library_name)
     # Get the articles from the current batch (contents of the batch library)
     batch_articles = get_library(api_token, library_id, with_metadata=True)
+    if len(batch_articles) == 0:
+        raise EmptyBatchLibrary('No articles found in the batch library "{0}"'.format(library_id))
     # Select the Article of the Day (the first one in the batch)
     article = batch_articles[0]
     # Remove this article from the batch library
     bibcodes = [article['bibcode']]
-    res = update_library(api_token, bibcodes, library_id, action='remove')
+    try:
+        res = update_library(api_token, bibcodes, library_id, action='remove')
+    except:
+        current_app.logger.exception('Failed to remove current Article of the Day from batch library')
+        raise Exception('Failed to remove %s from batch library' % article['bibcode'])
     # Check whether a record was actually removed from the library
+    # This is unlikely to go wrong, because we just found this article in this library!
     try:
         number_removed = res['number_removed']
     except:
