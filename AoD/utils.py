@@ -25,7 +25,7 @@ def get_data(yrange):
     # to be included if that happens to get loaded
     query = current_app.config.get('QUERY') + " year:%s" % yrange
     params = {'wt': 'json',
-               'q': current_app.config.get('QUERY'),
+               'q': query,
               'fl': current_app.config.get('FIELDS'),
               'sort': 'citation_count_norm desc',
               'rows': current_app.config.get('MAX_HITS')}
