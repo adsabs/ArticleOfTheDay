@@ -7,6 +7,7 @@ from client import client
 import requests
 import math
 import tweepy
+from urllib.parse import urlencode
 
 class NoSuchLibrary(Exception):
     pass
@@ -222,7 +223,12 @@ def post_to_twitter(art_data):
     max_url_length = current_app.config.get('TWITTER_URL_LENGTH')
     # Prepare the post
     # We include a URL to the abstract
-    url  = "%s/%s/abstract" % (current_app.config.get('ABSTRACT_PATH'), art_data['bibcode'])
+    # If available (from configuration) we apply UTM parameters
+    try:
+        utm_tags = urlencode(current_app.config.get('AOD_UTM_TAGS'))
+        url  = "%s/%s/abstract?%s" % (current_app.config.get('ABSTRACT_PATH'), art_data['bibcode'], utm_tags)
+    except:
+        url  = "%s/%s/abstract" % (current_app.config.get('ABSTRACT_PATH'), art_data['bibcode'])
     # With a single author we do not include "et al"
     nauthors = art_data.get('author_count',1)
     etal = ''

@@ -10,7 +10,13 @@ MAX_HITS = 1000
 MAX_GROUPS = 10
 AOD_LIBRARY_NAME = 'ADS Articles of the Day'
 BATCH_LIBRARY_NAME = 'Current ADS Article of the Day batch'
-TWITTER_TAG = '#adsarticleoftheday'
+AOD_UTM_TAGS = {
+    'utm_source':'pyscript',
+    'utm_medium':'tweet',
+    'utm_campaign':'ADSaotd',
+    'utm_content':'aotd'
+}
+TWITTER_TAG = '#ADSarticleOfTheDay'
 TWITTER_CONSUMER_KEY = 'consumerkey'
 TWITTER_CONSUMER_SECRET = 'consumersecret'
 TWITTER_ACCESS_KEY = 'accesskey'
