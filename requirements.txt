@@ -9,3 +9,4 @@ networkx==2.3.0
 numpy==1.19.0
 python-louvain==0.14
 tweepy==3.8.0
+itsdangerous==2.0.1
